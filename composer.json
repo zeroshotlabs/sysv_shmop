@@ -1,0 +1,30 @@
+{
+    "name": "yourvendor/mqueue-ffi",
+    "description": "A PHP FFI module for POSIX message queues.",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "YourVendor\\MQueueFFI\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=7.4",
+        "ffi/preprocessor": "^0.2.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "scripts": {
+        "post-install-cmd": [
+            "./scripts/generate_preprocessed_headers.sh"
+        ],
+        "post-update-cmd": [
+            "./scripts/generate_preprocessed_headers.sh"
+        ]
+    }
+}
+
+
