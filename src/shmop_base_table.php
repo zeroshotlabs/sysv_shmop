@@ -1,8 +1,9 @@
 <?php declare(strict_types=1);
-namespace stackware\psrb;
+namespace stackware\shmdeq;
 
 use \Countable;
 use \RuntimeException;
+use \InvalidArgumentException;
 use \IteratorAggregate;
 use \ArrayAccess;
 use \Exception;
@@ -10,21 +11,24 @@ use \Generator;
 use \Iterator;
 use \FFI;
 
+use \FFI\Cdata as cdata;
+
 
 abstract class shmop_table_base
 {
-    protected array $_id = [];
+    public const IPC_CREAT = 01000;
 
-    protected $ffi;
-    protected $shm_addr;
-    protected $max_rows;
-    protected $columns;
-    protected $column_map;
-    protected int $row_count;
-    protected $row_size;
-    protected $data_start;
-    protected $int_size;
-    protected const IPC_CREAT = 01000;
+    public array $_id = [];
+
+    public $ffi;
+    public cdata $shm_addr;
+    public int $max_rows;
+    public array $columns;
+    public array $column_map;
+    public int $row_count;
+    public int $row_size;
+    public cdata $data_start;
+    public int $int_size;
 
     
     public function __construct( $key, array $column_structure, int $max_rows )
@@ -96,10 +100,10 @@ abstract class shmop_table_base
         $this->ffi->memcpy($write_pos, str_pad(substr($value, 0, $this->columns[$col_index]), $this->columns[$col_index], "\0"), $this->columns[$col_index]);
     }
 
-    protected function write_row(array $row_data, int $row_index)
+    protected function write_row( int $row_index,array $row_data )
     {
         if (count($row_data) !== count($this->columns))
-            throw new \InvalidArgumentException("Row data count does not match column count");
+            throw new InvalidArgumentException("Row data count does not match column count");
 
         $write_pos = $this->data_start + ($row_index * $this->row_size);
         $row_buffer = $this->ffi->new("char[{$this->row_size}]");
@@ -120,7 +124,7 @@ abstract class shmop_table_base
     protected function read_row(int $row_index): array
     {
         if ($row_index < 0 || $row_index >= $this->max_rows)
-            throw new \InvalidArgumentException("Invalid row index");
+            throw new InvalidArgumentException("Invalid row index");
 
         $read_pos = $this->data_start + ($row_index * $this->row_size);
         $row_data = $this->ffi->new("char[{$this->row_size}]");
@@ -143,7 +147,7 @@ abstract class shmop_table_base
         $col_index = is_string($column) ? $this->column_map[$column] ?? null : $column;
 
         if ($col_index === null || $col_index < 0 || $col_index >= count($this->columns))
-            throw new \InvalidArgumentException("Invalid column: $column");
+            throw new InvalidArgumentException("Invalid column: $column");
     
         $column_width = $this->columns[$col_index];
         $column_offset = array_sum(array_slice($this->columns, 0, $col_index));

@@ -1,5 +1,5 @@
 <?php declare(strict_types=1);
-namespace stackware\psrb;
+namespace stackware\shmdeq;
 
 
 const O_RDONLY    = 0x00;
@@ -29,6 +29,6 @@ const TWO_MB = 2097152;
 
 
 require('shmop_base_table.php');
-require('shmop.dequeu.php');
+require('shmop_deque.php');
 
 

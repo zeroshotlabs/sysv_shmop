@@ -1,5 +1,5 @@
 <?php declare(strict_types=1);
-namespace stackware\psrb;
+namespace stackware\shmdeq;
 
 use \Countable;
 use \RuntimeException;
@@ -14,10 +14,12 @@ use \FFI;
 
 class shmop_deq extends shmop_table_base implements ArrayAccess
 {
-    public int $shm_key = 0;
-
     private $head;
     private $tail;
+
+    public int $shm_key = 0;
+
+    public closure $write_row_cb;
 
 
     public function __construct( int $key,array $cols,int $max_rows )
@@ -29,36 +31,72 @@ class shmop_deq extends shmop_table_base implements ArrayAccess
         $this->head = $this->ffi->cast("int *", $this->shm_addr);
         $this->tail = $this->ffi->cast("int *", $this->ffi->cast("char *", $this->shm_addr) + $this->int_size);
 
-        if( $this->head[0] == 0 && $this->tail[0] == 0 )
+        if( $this->head[0] === 0 && $this->tail[0] === 0 )
             $this->head[0] = $this->tail[0] = 0;
-    }
-    
-    public function push_row(array $row_data)
-    {
-        foreach( $row_data as $row )
-        {
-            $this->write_row($row, $this->tail[0]);
-    
+
+        $this->write_row_cb = function($row) {
+            $this->write_row($this->tail[0], $row);
+
             $this->tail[0] = ($this->tail[0] + 1) % $this->max_rows;
-    
-            if ($this->tail[0] == $this->head[0])
-                $this->head[0] = ($this->head[0] + 1) % $this->max_rows;    
-        }
+
+            if( $this->tail[0] === $this->head[0] )
+                $this->head[0] = ($this->head[0] + 1) % $this->max_rows;
+        };
     }
 
-    // better tail_row?
-    public function head_row(): array|null
+    public function push_row( array $row_data )
     {
-        if ($this->head[0] == $this->tail[0])
+        array_walk($row_data,($this->write_row_cb( $row )));
+    }
+
+    public function tail_row( int $lines = 1 ): array|null
+    {
+        if ($this->head[0] === $this->tail[0])
             return null; // Empty deque
 
-        $row_data = array_combine(
-            array_keys($this->columns),
-            array_map(fn($column) => $this->read_cell($this->head[0], $column), array_keys($this->columns))
-        );
+        $rows = [];
+        $current_row = ($this->tail[0] - 1 + $this->max_rows) % $this->max_rows;
 
-//        $this->head[0] = ($this->head[0] + 1) % $this->max_rows;
-        return $row_data;
+        for ($i = 0; $i < $lines; $i++) {
+            $row_data = array_combine(
+                array_keys($this->columns),
+                array_map(fn($column) => $this->read_cell($current_row, $column), array_keys($this->columns))
+            );
+
+            $rows[] = $row_data;
+            $current_row = ($current_row - 1 + $this->max_rows) % $this->max_rows;
+
+            if ($current_row === ($this->head[0] - 1 + $this->max_rows) % $this->max_rows) {
+                break; // Reached the beginning of the deque
+            }
+        }
+
+        return array_reverse($rows);
+    }
+
+    public function head_row( int $lines = 1 ): array|null
+    {
+        if ($this->head[0] === $this->tail[0])
+            return null; // Empty deque
+
+        $rows = [];
+        $current_row = $this->head[0];
+
+        for ($i = 0; $i < $lines; $i++) {
+            $row_data = array_combine(
+                array_keys($this->columns),
+                array_map(fn($column) => $this->read_cell($current_row, $column), array_keys($this->columns))
+            );
+
+            $rows[] = $row_data;
+            $current_row = ($current_row + 1) % $this->max_rows;
+
+            if ($current_row === $this->tail[0]) {
+                break; // Reached the end of the deque
+            }
+        }
+
+        return $rows;
     }
 
     public function column( $column, bool $n2o = true, ?int $length = null ): array
@@ -66,7 +104,7 @@ class shmop_deq extends shmop_table_base implements ArrayAccess
         $count = ($this->tail[0] - $this->head[0] + $this->max_rows) % $this->max_rows;
         $length = min($length ?? $count, $count);
 
-        if ($length == 0)
+        if ($length === 0)
             return [];
 
         $start_row = $n2o ? ($this->tail[0] - 1 + $this->max_rows) % $this->max_rows : $this->head[0];
@@ -74,60 +112,39 @@ class shmop_deq extends shmop_table_base implements ArrayAccess
         return $this->read_column($column, $start_row, $length, $n2o);
     }
 
-    public function sample(int $n): self
-    {
-        $count = ($this->tail[0] - $this->head[0] + $this->max_rows) % $this->max_rows;
-        if (abs($n) > $count)
-            throw new \InvalidArgumentException("Sample size cannot exceed available data");
-
-        $sampled = new self(0, $this->columns, $this->max_rows);
-        $sampled->shm_addr = $this->shm_addr;
-        $sampled->data_start = $this->data_start;
-
-        if ($n > 0) {
-            $sampled->head[0] = ($this->tail[0] - $n + $this->max_rows) % $this->max_rows;
-            $sampled->tail[0] = $this->tail[0];
-        } else {
-            $sampled->head[0] = $this->head[0];
-            $sampled->tail[0] = ($this->head[0] - $n) % $this->max_rows;
-        }
-
-        return $sampled;
-    }
-
     // ArrayAccess implementation
     public function offsetExists($offset): bool
     {
         if (is_array($offset) && count($offset) == 2) {
             [$column, $row] = $offset;
-            return isset($this->columns[$column]) && 
-                   $row >= 0 && 
-                   $row < ($this->tail[0] - $this->head[0] + $this->max_rows) % $this->max_rows;
+            $row_offset = ($this->tail[0] - $this->head[0] + $this->max_rows) % $this->max_rows;
+            return isset($this->columns[$column]) && $row >= 0 && $row < $row_offset;
         }
-        return is_int($offset) && 
-               $offset >= 0 && 
-               $offset < ($this->tail[0] - $this->head[0] + $this->max_rows) % $this->max_rows;
+    
+        $row_offset = ($this->tail[0] - $this->head[0] + $this->max_rows) % $this->max_rows;
+        return is_int($offset) && $offset >= 0 && $offset < $row_offset;
     }
 
     public function offsetGet($offset): mixed
     {
-        if (!$this->offsetExists($offset))
+        if (!$this->offsetExists($offset)) {
             throw new \OutOfBoundsException("Invalid offset");
-
-        if (is_array($offset) && count($offset) == 2) {
+        }
+    
+        if (is_array($offset) && count($offset) === 2) {
             [$column, $row] = $offset;
             $actual_row = ($this->head[0] + $row) % $this->max_rows;
             return $this->read_cell($actual_row, $column);
         }
-
-        $row_data = [];
+    
         $actual_row = ($this->head[0] + $offset) % $this->max_rows;
-        foreach ($this->columns as $column => $width)
-            $row_data[$column] = $this->read_cell($actual_row, $column);
-
-        return $row_data;
+        $read_cell_callback = function ($column) use ($actual_row) {
+            return $this->read_cell($actual_row, $column);
+        };
+    
+        return array_combine(array_keys($this->columns), array_map($read_cell_callback, array_keys($this->columns)));
     }
-
+    
     public function offsetSet($offset, $value): void
     {
         throw new \RuntimeException("shmop_deq is read-only through ArrayAccess");
@@ -137,14 +154,33 @@ class shmop_deq extends shmop_table_base implements ArrayAccess
     {
         throw new \RuntimeException("Cannot unset values in shmop_deq");
     }
-    
-    public function __destruct()
-    {
-        parent::__destruct();
-    }
 }
 
 
+    // public function sample(int $n): self
+    // {
+    //     $count = ($this->tail[0] - $this->head[0] + $this->max_rows) % $this->max_rows;
+    //     if (abs($n) > $count)
+    //         throw new \InvalidArgumentException("Sample size cannot exceed available data");
+
+    //     $sampled = new self(0, $this->columns, $this->max_rows);
+    //     $sampled->shm_addr = $this->shm_addr;
+    //     $sampled->data_start = $this->data_start;
+
+    //     if ($n > 0) {
+    //         $sampled->head[0] = ($this->tail[0] - $n + $this->max_rows) % $this->max_rows;
+    //         $sampled->tail[0] = $this->tail[0];
+    //     } else {
+    //         $sampled->head[0] = $this->head[0];
+    //         $sampled->tail[0] = ($this->head[0] - $n) % $this->max_rows;
+    //     }
+
+    //     return $sampled;
+    // }
+
+
+
+    
 // // adds chart/table structure to shmoop 
 
 // class shmop_deq
