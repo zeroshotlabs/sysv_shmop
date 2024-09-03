@@ -45,7 +45,8 @@ class shmop_deque extends shmop_table_base implements ArrayAccess
     public function push_rows( array $rows )
     {
         array_walk($rows,function( $r ) {
-            plog($r);
+            plog("\n".implode("-",$r));
+//            plog($r);
         });
 
 //        array_walk($row,$this->write_row_cb);
