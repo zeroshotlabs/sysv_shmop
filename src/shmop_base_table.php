@@ -1,17 +1,14 @@
 <?php declare(strict_types=1);
 namespace stackware\shmdeq;
 
-use \Countable;
-use \RuntimeException;
 use \InvalidArgumentException;
-use \IteratorAggregate;
-use \ArrayAccess;
 use \Exception;
-use \Generator;
-use \Iterator;
 use \FFI;
-
 use \FFI\Cdata as cdata;
+
+// need to also use libffi traits
+use function stackware\libffi\plog;
+use function stackware\libffi\to_eights;
 
 
 abstract class shmop_table_base
@@ -31,7 +28,7 @@ abstract class shmop_table_base
     public int $int_size;
 
     
-    public function __construct( $key, array $column_structure, int $max_rows )
+    public function __construct( int $key, array $column_structure, int $max_rows )
     {
         $this->ffi = FFI::cdef("
             typedef unsigned int key_t;
@@ -45,28 +42,27 @@ abstract class shmop_table_base
 
         $this->int_size = FFI::sizeof($this->ffi->type("int"));
         $this->max_rows = $max_rows;
-        $this->columns = array_values($column_structure);
+        $this->columns = $column_structure;
         $this->column_map = array_flip(array_keys($column_structure));
-        $this->row_size = array_sum($this->columns);
+        $this->row_size = to_eights(array_sum($this->columns));
 
         $total_size = ($this->row_size * $max_rows) + (2 * $this->int_size);
+        $total_size = to_eights($total_size);
 
         $shm_id = $this->ffi->shmget($key, $total_size, 0666 | self::IPC_CREAT);
 
-//        var_dump(\debug_print_backtrace());
-
-        if ($shm_id == -1)
+        if ($shm_id === -1)
             throw new RuntimeException("Failed to get shared memory segment: ".$this->ffi->errno);
 
         $this->shm_addr = $this->ffi->shmat($shm_id, NULL, 0);
 
-        if ($this->shm_addr == $this->ffi->cast("void *", -1))
+        if ($this->shm_addr === $this->ffi->cast("void *", -1))
             throw new RuntimeException("Failed to attach shared memory segment");
 
         $this->data_start = $this->ffi->cast("char *", $this->shm_addr) + (2 * $this->int_size);
 
         $this->_id = [$key,$shm_id];
-        echo "\n\n=== SHMOP @ ".__CLASS__." / {$key} / {$shm_id}";
+        plog("SHMOP @ ".implode('|',array_keys($this->columns))." / {$key} / {$shm_id}");
     }
 
     public function get_length(): int
@@ -103,7 +99,13 @@ abstract class shmop_table_base
     protected function write_row( int $row_index,array $row_data )
     {
         if (count($row_data) !== count($this->columns))
-            throw new InvalidArgumentException("Row data count does not match column count");
+        {
+            $msg = "Incoming columns don't match configured columns - see log.";
+            plog("$msg \n\nincoming: ".print_r(array_keys($row_data),true)."\n\n"
+                         ." columns: ".print_r(array_keys($this->columns),true));
+
+            throw new InvalidArgumentException($msg);
+        }
 
         $write_pos = $this->data_start + ($row_index * $this->row_size);
         $row_buffer = $this->ffi->new("char[{$this->row_size}]");
