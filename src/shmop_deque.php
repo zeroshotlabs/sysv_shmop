@@ -33,7 +33,6 @@ class shmop_deque extends shmop_table_base implements ArrayAccess
             $this->head[0] = $this->tail[0] = 0;
 
         $this->write_row_cb = \Closure::fromCallable(function($row) {
-            plog($row);
             $this->write_row($this->tail[0],$row);
 
             $this->tail[0] = ($this->tail[0] + 1) % $this->max_rows;
@@ -43,9 +42,13 @@ class shmop_deque extends shmop_table_base implements ArrayAccess
         });
     }
 
-    public function push_row( array $row )
+    public function push_rows( array $rows )
     {
-        array_walk($row,$this->write_row_cb);
+        array_walk($rows,function( $r ) {
+            plog($r);
+        });
+
+//        array_walk($row,$this->write_row_cb);
     }
 
     public function tail_row( int $lines = 1 ): array|null
