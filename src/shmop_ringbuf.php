@@ -28,7 +28,7 @@ abstract class shmop_table_base
     public int $int_size;
 
     
-    public function __construct( int $key, array $column_structure, int $max_rows )
+    public function __construct( int $key, array $column_structure, int $max_rows, string $label = '' )
     {
         $this->ffi = FFI::cdef("
             typedef unsigned int key_t;
@@ -46,23 +46,26 @@ abstract class shmop_table_base
         $this->column_map = array_flip(array_keys($column_structure));
         $this->row_size = to_eights(array_sum($this->columns));
 
+        if( empty($label) )
+            $label = implode('_', array_keys(array_slice($this->columns,0,4)));
+
         $total_size = ($this->row_size * $max_rows) + (2 * $this->int_size);
         $total_size = to_eights($total_size);
 
         $shm_id = $this->ffi->shmget($key, $total_size, 0666 | self::IPC_CREAT);
 
         if ($shm_id === -1)
-            throw new RuntimeException("Failed to get shared memory segment: ".$this->ffi->errno);
+            throw new RuntimeException("{$label}: Failed to get shared memory segment: ".$this->ffi->errno);
 
         $this->shm_addr = $this->ffi->shmat($shm_id, NULL, 0);
 
         if ($this->shm_addr === $this->ffi->cast("void *", -1))
-            throw new RuntimeException("Failed to attach shared memory segment");
+            throw new RuntimeException("{$label}: Failed to attach shared memory segment");
 
         $this->data_start = $this->ffi->cast("char *", $this->shm_addr) + (2 * $this->int_size);
 
         $this->_id = [$key,$shm_id];
-        plog("SHMOP @ ".implode('|',array_keys($this->columns))." / {$key} / {$shm_id}");
+        plog("SHMOP w/{$label} @ ".implode('|',array_keys($this->columns))." / {$key} / {$shm_id}");
     }
 
     public function get_length(): int
@@ -173,7 +176,7 @@ abstract class shmop_table_base
 
     public function __destruct()
     {
-        echo "\n--Taking down deq ".implode('-',$this->_id)."\n";
+        plog("Taking down deq ".implode('-',$this->_id)."\n");
         $this->ffi->shmdt($this->shm_addr);
     }
 }

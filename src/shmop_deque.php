@@ -44,12 +44,12 @@ class shmop_deque extends shmop_table_base implements ArrayAccess
 
     public function push_rows( array $rows )
     {
-        array_walk($rows,function( $r ) {
-            plog("\n".implode("-",$r));
-//            plog($r);
-        });
+        // array_walk($rows,function( $r ) {
+        //     plog("\n".implode("-",$r));
+        //     plog($r);
+        // });
 
-//        array_walk($row,$this->write_row_cb);
+        array_walk($rows,$this->write_row_cb);
     }
 
     public function tail_row( int $lines = 1 ): array|null
