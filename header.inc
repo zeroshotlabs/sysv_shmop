@@ -1,5 +1,5 @@
 <?php declare(strict_types=1);
-namespace stackware\shmdeq;
+namespace stackware\libffi;
 
 
 const O_RDONLY    = 0x00;
@@ -28,7 +28,7 @@ const TWO_MB = 2097152;
 
 
 
-require('shmop_base_table.php');
-require('shmop_deque.php');
+require('src/shmop_base_table.php');
+require('src/shmop_deque.php');
 
 
