@@ -1,10 +1,9 @@
 <?php
+/*** WIP ***/
 require_once 'src/shm_table.php';
 
-use stackware\posix_shm\shm_table;
+use zeroshotlabs\posix_shm\shm_table;
 
-
-// $ffi = FFI::cdef(file_get_contents("src/shm_table.h"), "shm_table.so");
 
 class TestTable extends shm_table {
     // This class is empty, it just needs to extend posix_shm_table
@@ -67,3 +66,4 @@ for ($i = 0; $i < 100; $i++) {
 }
 
 echo "\nTest completed.\n";
+
