@@ -1,11 +1,11 @@
 {
-    "name": "stackware/shmdeq",
+    "name": "zeroshotlabs/shmdeq",
     "description": "A PHP FFI module for shared memory backed dequeue ring buffer.",
     "type": "library",
     "license": "MIT",
     "autoload": {
         "psr-4": {
-            "stackware\\shmdeq\\": "src/"
+            "zeroshotlabs\\shmdeq\\": "src/"
         }
     },
     "require": {
