@@ -27,8 +27,17 @@ const TWO_MB = 2097152;
 
 
 
+// typedef unsigned int key_t;
+// typedef int shmatt_t;
+// extern int errno;
+// void *shmat(int shmid, const void *shmaddr, int shmflg);
+// int shmdt(const void *shmaddr);
+// int shmget(key_t key, size_t size, int shmflg);
+// void *memcpy(void *dest, const void *src, size_t n);
 
-require('src/shmop_base_table.php');
+
+
+require('src/shmop_ringbuf.php');
 require('src/shmop_deque.php');
 
 
